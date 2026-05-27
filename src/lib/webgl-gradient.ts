@@ -63,21 +63,32 @@ void main() {
   vec2 uv = gl_FragCoord.xy / u_res;
   float aspect = u_res.x / u_res.y;
 
-  // Blend in OKLab — perceptually uniform, no banding
+  // Blob 0 is always the background fill — excluded from the kernel.
+  // This prevents its large radius from desaturating every pixel.
+  vec3 bgLab = u_lab[0];
+
+  // Blend color blobs (1+) in OKLab with a wide Gaussian (σ = r).
+  // Wider than the old exp(-d²/r²) kernel so blobs transition smoothly
+  // into each other without hard isophote rings.
   vec3 totalLab = vec3(0.0);
   float totalWeight = 0.0;
 
-  for (int i = 0; i < 8; i++) {
+  for (int i = 1; i < 8; i++) {
     if (i >= u_count) break;
     vec2 d = vec2((uv.x - u_pos[i].x) * aspect, uv.y - u_pos[i].y);
     float dist2 = dot(d, d);
     float r = u_rad[i];
-    float w = exp(-dist2 / (r * r));
+    float w = exp(-dist2 / (r * r * 1.2));
     totalLab += u_lab[i] * w;
     totalWeight += w;
   }
 
-  vec3 lab = totalWeight > 0.001 ? totalLab / totalWeight : vec3(0.0);
+  // Smoothly mix background with blended blobs based on combined coverage.
+  // 1 - exp(-w) maps [0, ∞) → [0, 1) with a soft S-curve so blob edges
+  // dissolve into the background rather than cutting off.
+  vec3 blendedLab = totalWeight > 0.0 ? totalLab / totalWeight : bgLab;
+  float coverage = 1.0 - exp(-totalWeight * 1.4);
+  vec3 lab = mix(bgLab, blendedLab, coverage);
 
   // OKLab → linear sRGB → gamma sRGB
   vec3 linear = oklabToLinear(lab);
@@ -129,6 +140,8 @@ export class WebGLGradient {
   private paused = false;
   private config: GradientConfig;
   private onFrame?: (elapsed: number) => void;
+  private smoothedNoiseOpacity = 0;
+  private lastElapsed = 0;
 
   constructor(canvas: HTMLCanvasElement, config: GradientConfig, onFrame?: (e: number) => void) {
     const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true });
@@ -182,9 +195,14 @@ export class WebGLGradient {
     }
     gl.viewport(0, 0, canvas.width, canvas.height);
 
-    const { blobs, speed, noiseDensity, noiseOpacity } = this.config;
+    const { blobs, noiseDensity, noiseOpacity } = this.config;
     const count = Math.min(blobs.length, 8);
-    const t = elapsed * speed;
+
+    // Frame-rate-independent lerp so grain toggle fades rather than pops.
+    const dt = Math.min(elapsed - this.lastElapsed, 0.1); // cap at 100ms
+    this.lastElapsed = elapsed;
+    const alpha = explicitW !== undefined ? 1 : Math.min(1, dt * 12);
+    this.smoothedNoiseOpacity += (noiseOpacity - this.smoothedNoiseOpacity) * alpha;
 
     const positions = new Float32Array(16);
     const colors = new Float32Array(24);
@@ -192,8 +210,8 @@ export class WebGLGradient {
 
     for (let i = 0; i < count; i++) {
       const b = blobs[i];
-      positions[i * 2] = b.x + b.amplX * Math.sin(b.freqX * t + b.phaseX);
-      positions[i * 2 + 1] = b.y + b.amplY * Math.cos(b.freqY * t + b.phaseY);
+      positions[i * 2] = b.x;
+      positions[i * 2 + 1] = b.y;
       const [L, a, bv] = hexToOklab(b.color);
       colors[i * 3] = L; colors[i * 3 + 1] = a; colors[i * 3 + 2] = bv;
       radii[i] = b.radius;
@@ -210,7 +228,7 @@ export class WebGLGradient {
     gl.uniform3fv(u('u_lab'), colors);
     gl.uniform1fv(u('u_rad'), radii);
     gl.uniform1f(u('u_noiseDensity'), noiseDensity);
-    gl.uniform1f(u('u_noiseOpacity'), noiseOpacity);
+    gl.uniform1f(u('u_noiseOpacity'), this.smoothedNoiseOpacity);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.bindVertexArray(null);

@@ -29,10 +29,13 @@ export function hexToOklab(hex: string): [number, number, number] {
   ];
 }
 
+export function randomBlobColor(): string {
+  return randomColorHex(0.55, 0.72, 0.12, 0.20);
+}
+
 export function presetToConfig(preset: GradientPreset): GradientConfig {
   return {
     blobs: preset.blobs.map(b => ({ ...b, id: String(++blobIdCounter) })),
-    speed: preset.speed,
     noiseDensity: preset.noiseDensity,
     noiseOpacity: preset.noiseOpacity,
   };
@@ -42,34 +45,38 @@ function randBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
-function randomHex(): string {
-  const hue = Math.floor(Math.random() * 360);
-  const sat = Math.floor(randBetween(50, 90));
-  const light = Math.floor(randBetween(40, 80));
-  return hslToHex(hue, sat, light);
+// OKLab inverse: OKLCH polar → OKLab Cartesian → linear sRGB → gamma sRGB → hex.
+// Same math as the WebGL shader, keeping CPU and GPU color science consistent.
+function oklchToHex(L: number, C: number, H: number): string {
+  const hRad = (H * Math.PI) / 180;
+  const a = C * Math.cos(hRad);
+  const b = C * Math.sin(hRad);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const lc = l_ * l_ * l_, mc = m_ * m_ * m_, sc = s_ * s_ * s_;
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  const toGamma = (v: number) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  const r = toGamma(clamp(+4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc));
+  const g = toGamma(clamp(-1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc));
+  const bv = toGamma(clamp(-0.0041960863 * lc - 0.7034186147 * mc + 1.7076147010 * sc));
+  const hex2 = (v: number) => Math.round(v * 255).toString(16).padStart(2, '0');
+  return `#${hex2(r)}${hex2(g)}${hex2(bv)}`;
 }
 
-function hslToHex(h: number, s: number, l: number): string {
-  s /= 100; l /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
-    return Math.round(255 * c).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
+function randomColorHex(minL: number, maxL: number, minC: number, maxC: number): string {
+  return oklchToHex(randBetween(minL, maxL), randBetween(minC, maxC), Math.random() * 360);
 }
 
 export function randomizeConfig(): GradientConfig {
   const count = Math.floor(randBetween(4, 7));
   const phases = [0, 1.05, 2.09, 3.14, 4.19, 5.24];
 
-  // Dark background blob
-  const bgHue = Math.floor(Math.random() * 360);
+  // Dark background blob — near-black with a faint hue tint
   const blobs: GradientBlob[] = [
     {
       id: String(++blobIdCounter),
-      color: hslToHex(bgHue, 60, 8),
+      color: oklchToHex(randBetween(0.06, 0.12), randBetween(0, 0.03), Math.random() * 360),
       x: 0.5, y: 0.5,
       radius: 1.3,
       amplX: 0, amplY: 0,
@@ -78,13 +85,23 @@ export function randomizeConfig(): GradientConfig {
     },
   ];
 
+  // Blobs scatter around a shared centre; radius decreases with each blob
+  // so the visual structure mirrors the default preset (prominent → subtle).
+  // Centre kept close to mid-screen; spread tightened so blobs always cluster.
+  const cx = randBetween(0.42, 0.58);
+  const cy = randBetween(0.42, 0.58);
+  const clamp01 = (v: number) => Math.max(0.15, Math.min(0.85, v));
+  const colorBlobCount = count - 1;
+
   for (let i = 1; i < count; i++) {
+    const t = (i - 1) / Math.max(colorBlobCount - 1, 1); // 0 → 1 across blobs
+    const radius = 0.28 - t * 0.10 + randBetween(-0.02, 0.02); // 0.28 → 0.18, small jitter
     blobs.push({
       id: String(++blobIdCounter),
-      color: randomHex(),
-      x: randBetween(0.1, 0.9),
-      y: randBetween(0.1, 0.9),
-      radius: randBetween(0.35, 0.55),
+      color: randomColorHex(0.55, 0.72, 0.12, 0.20),
+      x: clamp01(cx + randBetween(-0.16, 0.16)),
+      y: clamp01(cy + randBetween(-0.16, 0.16)),
+      radius,
       amplX: randBetween(0.07, 0.14),
       amplY: randBetween(0.07, 0.14),
       freqX: randBetween(0.15, 0.32),
@@ -96,7 +113,6 @@ export function randomizeConfig(): GradientConfig {
 
   return {
     blobs,
-    speed: randBetween(0.7, 1.2),
     noiseDensity: randBetween(3, 10),
     noiseOpacity: randBetween(0.1, 0.4),
   };
@@ -136,32 +152,24 @@ export function randomizeColors(config: GradientConfig): GradientConfig {
 }
 
 export function generateRandomBlob(existingBlobs: GradientBlob[]): GradientBlob {
-  // Pick a hue near existing blob colors for visual harmony
+  // Pick a hue near existing blob colors using OKLab hue (atan2 on a,b channels)
   const existingHues = existingBlobs.slice(1).map(b => {
-    const n = parseInt(b.color.replace('#', ''), 16);
-    const r = (n >> 16 & 255) / 255;
-    const g = (n >> 8 & 255) / 255;
-    const bv = (n & 255) / 255;
-    const max = Math.max(r, g, bv);
-    const min = Math.min(r, g, bv);
-    const d = max - min;
-    if (d === 0) return 0;
-    let h = max === r ? ((g - bv) / d) % 6 : max === g ? (bv - r) / d + 2 : (r - g) / d + 4;
-    return Math.round(h * 60 + 360) % 360;
+    const [, a, bv] = hexToOklab(b.color);
+    return (Math.atan2(bv, a) * 180 / Math.PI + 360) % 360;
   });
   const baseHue = existingHues.length
     ? existingHues[Math.floor(Math.random() * existingHues.length)]
-    : Math.floor(Math.random() * 360);
+    : Math.random() * 360;
   const hue = (baseHue + randBetween(-60, 60) + 360) % 360;
 
   const phases = [0, 1.05, 2.09, 3.14, 4.19, 5.24];
   const i = existingBlobs.length;
   return {
     id: String(++blobIdCounter),
-    color: hslToHex(Math.round(hue), Math.floor(randBetween(55, 85)), Math.floor(randBetween(45, 75))),
+    color: oklchToHex(randBetween(0.55, 0.72), randBetween(0.12, 0.20), hue),
     x: randBetween(0.1, 0.9),
     y: randBetween(0.1, 0.9),
-    radius: randBetween(0.35, 0.55),
+    radius: randBetween(0.20, 0.38),
     amplX: randBetween(0.07, 0.14),
     amplY: randBetween(0.07, 0.14),
     freqX: randBetween(0.15, 0.32),
@@ -174,12 +182,11 @@ export function generateRandomBlob(existingBlobs: GradientBlob[]): GradientBlob 
 export function presetCSSGradient(preset: GradientPreset): string {
   const colors = preset.blobs.slice(1, 4).map(b => b.color);
   if (colors.length < 2) return preset.blobs[0]?.color ?? '#000';
-  return `linear-gradient(135deg, ${colors.join(', ')})`;
+  return `linear-gradient(in oklch 135deg, ${colors.join(', ')})`;
 }
 
 export function generateSVG(
   config: GradientConfig,
-  elapsed: number,
   width: number,
   height: number,
 ): string {
@@ -188,9 +195,8 @@ export function generateSVG(
   const bgColor = bgBlob?.color ?? '#000';
 
   const circles = config.blobs.slice(1).map(b => {
-    const t = elapsed * config.speed;
-    const cx = (b.x + b.amplX * Math.sin(b.freqX * t + b.phaseX)) * width;
-    const cy = (b.y + b.amplY * Math.cos(b.freqY * t + b.phaseY)) * height;
+    const cx = b.x * width;
+    const cy = b.y * height;
     const r = b.radius * Math.min(width, height) * 0.6;
     return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${b.color}" opacity="0.85"/>`;
   }).join('\n    ');

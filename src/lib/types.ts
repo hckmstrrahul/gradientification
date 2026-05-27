@@ -14,7 +14,6 @@ export interface GradientBlob {
 
 export interface GradientConfig {
   blobs: GradientBlob[];
-  speed: number;
   noiseDensity: number; // 1–20, grain cell size
   noiseOpacity: number; // 0–1
 }
@@ -26,7 +25,6 @@ export interface GradientPreset {
   id: string;
   name: string;
   blobs: Omit<GradientBlob, 'id'>[];
-  speed: number;
   noiseDensity: number;
   noiseOpacity: number;
 }

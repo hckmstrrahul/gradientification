@@ -7,7 +7,6 @@ import { useGradient } from '@/hooks/use-gradient';
 export default function Home() {
   const {
     canvasRef,
-    isPlaying,
     config,
     setConfig,
     activePresetId,
@@ -15,7 +14,6 @@ export default function Home() {
     randomize,
     shuffleColors,
     reset,
-    togglePlay,
     download,
   } = useGradient();
 
@@ -23,7 +21,6 @@ export default function Home() {
     <main className="relative w-screen h-screen overflow-hidden bg-black">
       <GradientCanvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       <ControlPanel
-        isPlaying={isPlaying}
         config={config}
         activePresetId={activePresetId}
         onSetConfig={setConfig}
@@ -31,7 +28,6 @@ export default function Home() {
         onRandomize={randomize}
         onShuffleColors={shuffleColors}
         onReset={reset}
-        onTogglePlay={togglePlay}
         onDownload={download}
       />
     </main>

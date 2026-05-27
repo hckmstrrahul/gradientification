@@ -9,10 +9,9 @@ import { DEFAULT_PRESET, PRESETS } from '@/lib/presets';
 export function useGradient() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<WebGLGradient | null>(null);
-  const [isPlaying, setIsPlaying] = useState(true);
   const [config, setConfigState] = useState<GradientConfig>(() => presetToConfig(DEFAULT_PRESET));
   const [activePresetId, setActivePresetId] = useState<string>(DEFAULT_PRESET.id);
-  const elapsedRef = useRef(0); // transient — not needed as React state
+  const elapsedRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -78,30 +77,6 @@ export function useGradient() {
     setActivePresetId(DEFAULT_PRESET.id);
   }, []);
 
-  const play = useCallback(() => {
-    engineRef.current?.start();
-    setIsPlaying(true);
-  }, []);
-
-  const pause = useCallback(() => {
-    engineRef.current?.pause();
-    setIsPlaying(false);
-  }, []);
-
-  const togglePlay = useCallback(() => {
-    // Read from ref to avoid stale closure
-    if (engineRef.current) {
-      const playing = !isPlaying;
-      if (playing) {
-        engineRef.current.start();
-        setIsPlaying(true);
-      } else {
-        engineRef.current.pause();
-        setIsPlaying(false);
-      }
-    }
-  }, [isPlaying]);
-
   const download = useCallback(
     (format: DownloadFormat, scale: DownloadScale, quality = 1.0) => {
       const canvas = canvasRef.current;
@@ -111,7 +86,7 @@ export function useGradient() {
       const name = `gradient-${Date.now()}`;
 
       if (format === 'svg') {
-        const svg = generateSVG(config, elapsedRef.current, w, h);
+        const svg = generateSVG(config, w, h);
         const blob = new Blob([svg], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         triggerDownload(url, `${name}.svg`);
@@ -127,7 +102,6 @@ export function useGradient() {
 
   return {
     canvasRef,
-    isPlaying,
     config,
     setConfig,
     activePresetId,
@@ -135,7 +109,6 @@ export function useGradient() {
     randomize,
     shuffleColors,
     reset,
-    togglePlay,
     download,
   };
 }
