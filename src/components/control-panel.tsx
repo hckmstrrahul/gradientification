@@ -185,13 +185,9 @@ export default function ControlPanel({
               <Tab active={!grainEnabled} onClick={() => grainEnabled && toggleGrain()}>Off</Tab>
               <Tab active={grainEnabled} onClick={() => !grainEnabled && toggleGrain()}>On</Tab>
               {grainEnabled && (
-                <>
-                  <FilledSlider title="Density" value={config.noiseDensity} min={1} max={20} step={0.5}
-                    display={v => v.toFixed(0)} onChange={v => onSetConfig(prev => ({ ...prev, noiseDensity: v }))} />
-                  <FilledSlider title="Opacity" value={config.noiseOpacity} min={0.01} max={1} step={0.01}
-                    display={v => `${Math.round(v * 100)}%`}
-                    onChange={v => { if (v > 0) savedNoiseOpacity.current = v; onSetConfig(prev => ({ ...prev, noiseOpacity: v })); }} />
-                </>
+                <FilledSlider title="Opacity" value={config.noiseOpacity} min={0.01} max={1} step={0.01}
+                  display={v => `${Math.round(v * 100)}%`}
+                  onChange={v => { if (v > 0) savedNoiseOpacity.current = v; onSetConfig(prev => ({ ...prev, noiseOpacity: v })); }} />
               )}
             </CtrlGroup>
             <Sep />
@@ -329,13 +325,9 @@ function BottomSheet({
                     <Tab active={!grainEnabled} onClick={() => grainEnabled && toggleGrain()}>Off</Tab>
                     <Tab active={grainEnabled} onClick={() => !grainEnabled && toggleGrain()}>On</Tab>
                     {grainEnabled && (
-                      <>
-                        <FilledSlider title="Density" value={config.noiseDensity} min={1} max={20} step={0.5}
-                          display={v => v.toFixed(0)} onChange={v => onSetConfig(prev => ({ ...prev, noiseDensity: v }))} />
-                        <FilledSlider title="Opacity" value={config.noiseOpacity} min={0.01} max={1} step={0.01}
-                          display={v => `${Math.round(v * 100)}%`}
-                          onChange={v => { if (v > 0) savedNoiseOpacity.current = v; onSetConfig(prev => ({ ...prev, noiseOpacity: v })); }} />
-                      </>
+                      <FilledSlider title="Opacity" value={config.noiseOpacity} min={0.01} max={1} step={0.01}
+                        display={v => `${Math.round(v * 100)}%`}
+                        onChange={v => { if (v > 0) savedNoiseOpacity.current = v; onSetConfig(prev => ({ ...prev, noiseOpacity: v })); }} />
                     )}
                   </SheetRow>
 

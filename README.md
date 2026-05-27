@@ -25,11 +25,16 @@ Live: [gradientification.vercel.app](https://gradientification.vercel.app)
 - Tap outside the bottom sheet to dismiss; smooth ease-out open / ease-in close (no bounce)
 - Two-view navigation in the sheet: main controls → Blobs editor (horizontal scroll) with back button
 
+### Canvas interactions
+- **Drag to move** — click-and-drag on the canvas grabs the nearest blob to the cursor; pointer capture keeps the drag alive even if the cursor leaves the canvas
+- **Scroll to resize** — wheel / trackpad swipe over the canvas resizes the most recently grabbed blob (multiplicative, so it feels even at any size); scroll up to grow, down to shrink
+- `cursor: grab` / `grabbing` for affordance; page scroll is only suppressed while resizing a blob
+
 ### Controls
 - **Background** — native color picker for the base fill
 - **Blobs** — add/remove (1 background + up to 7 colored); per-blob color picker, hex input, dice randomize, X / Y / Size sliders
-- **Grain** — toggle with density and opacity fine-tuning; last value remembered on re-enable
-- **Randomize** — shuffles positions, sizes, and movement; blobs cluster near screen center
+- **Grain** — On / Off toggle with opacity fine-tuning; last value remembered on re-enable
+- **Randomize** — reshuffles positions and sizes with a per-call spread (tight clusters to wider scatter) and a descending size hierarchy (prominent → subtle) to mirror the default aesthetic
 - **Shuffle Colors** — randomises colors only; layout and grain untouched
 - **Reset** — restores default preset
 

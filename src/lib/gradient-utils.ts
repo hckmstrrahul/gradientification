@@ -120,15 +120,28 @@ export function randomizeConfig(): GradientConfig {
 
 export function randomizeLayout(config: GradientConfig): GradientConfig {
   const phases = [0, 1.05, 2.09, 3.14, 4.19, 5.24];
+  // Mirror the default preset's aesthetic: cluster near a shared centre and
+  // give blobs a descending size hierarchy (prominent → subtle) instead of a
+  // flat random spread, which looks too sparse and uniform.
+  const cx = randBetween(0.42, 0.58);
+  const cy = randBetween(0.42, 0.58);
+  const clamp01 = (v: number) => Math.max(0.15, Math.min(0.85, v));
+  const colorBlobCount = Math.max(config.blobs.length - 1, 1);
+  // Pick a spread per call so some randomizes are tight clusters and others
+  // are loose spreads — variety beats a fixed scatter that always feels same.
+  const spread = randBetween(0.14, 0.34);
+
   return {
     ...config,
     blobs: config.blobs.map((b, i) => {
       if (i === 0) return b;
+      const t = (i - 1) / Math.max(colorBlobCount - 1, 1); // 0 → 1 across color blobs
+      const radius = 0.28 - t * 0.10 + randBetween(-0.02, 0.02); // 0.28 → 0.18
       return {
         ...b,
-        x: randBetween(0.1, 0.9),
-        y: randBetween(0.1, 0.9),
-        radius: randBetween(0.35, 0.55),
+        x: clamp01(cx + randBetween(-spread, spread)),
+        y: clamp01(cy + randBetween(-spread, spread)),
+        radius,
         amplX: randBetween(0.07, 0.14),
         amplY: randBetween(0.07, 0.14),
         freqX: randBetween(0.15, 0.32),
