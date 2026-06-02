@@ -154,12 +154,17 @@ export function randomizeLayout(config: GradientConfig): GradientConfig {
 }
 
 export function randomizeColors(config: GradientConfig): GradientConfig {
-  const newFull = randomizeConfig();
+  // Recolor every blob. (Previously borrowed colors from a freshly generated
+  // config that only had 4–6 blobs, so any blob past that index kept its old
+  // color — leaving most blobs unchanged once you added more than ~5.)
   return {
     ...config,
     blobs: config.blobs.map((b, i) => ({
       ...b,
-      color: newFull.blobs[i]?.color ?? b.color,
+      color: i === 0
+        // Background: near-black with a faint hue tint (matches randomizeConfig).
+        ? oklchToHex(randBetween(0.06, 0.12), randBetween(0, 0.03), Math.random() * 360)
+        : randomColorHex(0.55, 0.72, 0.12, 0.20),
     })),
   };
 }

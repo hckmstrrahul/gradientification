@@ -12,9 +12,9 @@ precision highp float;
 uniform vec2 u_res;
 uniform float u_time;
 uniform int u_count;
-uniform vec2 u_pos[8];
-uniform vec3 u_lab[8];  // OKLab: L, a, b
-uniform float u_rad[8];
+uniform vec2 u_pos[11];
+uniform vec3 u_lab[11];  // OKLab: L, a, b
+uniform float u_rad[11];
 uniform float u_noiseDensity;
 uniform float u_noiseOpacity;
 
@@ -73,7 +73,7 @@ void main() {
   vec3 totalLab = vec3(0.0);
   float totalWeight = 0.0;
 
-  for (int i = 1; i < 8; i++) {
+  for (int i = 1; i < 11; i++) {
     if (i >= u_count) break;
     vec2 d = vec2((uv.x - u_pos[i].x) * aspect, uv.y - u_pos[i].y);
     float dist2 = dot(d, d);
@@ -193,10 +193,26 @@ export class WebGLGradient {
       canvas.width = w;
       canvas.height = h;
     }
+    // The browser clamps the WebGL backing store to a max area/memory budget.
+    // When the requested size exceeds it (common on hi-res 2×/4× export),
+    // drawingBufferWidth/Height come back smaller than the canvas attributes —
+    // yet the viewport and toDataURL() still use the full attribute size, so
+    // the un-allocated margin reads as a black/transparent strip. Re-sync the
+    // canvas attributes to the real buffer size so viewport, shader resolution,
+    // and readback all stay consistent. The clamp isn't single-step (shrinking
+    // to the reported size can clamp again), so iterate until it settles. In
+    // the live path no clamp occurs and this loop runs zero times.
+    for (let guard = 0; guard < 8; guard++) {
+      if (canvas.width === gl.drawingBufferWidth && canvas.height === gl.drawingBufferHeight) break;
+      canvas.width = gl.drawingBufferWidth;
+      canvas.height = gl.drawingBufferHeight;
+    }
     gl.viewport(0, 0, canvas.width, canvas.height);
 
     const { blobs, noiseDensity, noiseOpacity } = this.config;
-    const count = Math.min(blobs.length, 8);
+    // Capacity = 1 background + up to 10 color blobs. Must match the GLSL
+    // uniform array sizes (u_pos/u_lab/u_rad[11]) and the shader loop bound.
+    const count = Math.min(blobs.length, 11);
 
     // Frame-rate-independent lerp so grain toggle fades rather than pops.
     const dt = Math.min(elapsed - this.lastElapsed, 0.1); // cap at 100ms
@@ -204,9 +220,9 @@ export class WebGLGradient {
     const alpha = explicitW !== undefined ? 1 : Math.min(1, dt * 12);
     this.smoothedNoiseOpacity += (noiseOpacity - this.smoothedNoiseOpacity) * alpha;
 
-    const positions = new Float32Array(16);
-    const colors = new Float32Array(24);
-    const radii = new Float32Array(8);
+    const positions = new Float32Array(22);
+    const colors = new Float32Array(33);
+    const radii = new Float32Array(11);
 
     for (let i = 0; i < count; i++) {
       const b = blobs[i];

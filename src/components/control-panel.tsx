@@ -17,6 +17,10 @@ const SCALES: { label: string; value: DownloadScale }[] = [
   { label: '4×', value: 4 },
 ];
 
+// Total blob capacity: 1 background + 10 color blobs. Must match the WebGL
+// shader's uniform array size in webgl-gradient.ts.
+const MAX_BLOBS = 11;
+
 interface ControlPanelProps {
   config: GradientConfig;
   activePresetId: string;
@@ -80,13 +84,22 @@ export default function ControlPanel({
     [updateBlob],
   );
 
+  // Capacity is 1 background + 10 color blobs (mirrors the shader's 11 slots).
   const addBlob = useCallback(() => {
-    onSetConfig(prev => ({ ...prev, blobs: [...prev.blobs, generateRandomBlob(prev.blobs)] }));
+    onSetConfig(prev => prev.blobs.length >= MAX_BLOBS ? prev : { ...prev, blobs: [...prev.blobs, generateRandomBlob(prev.blobs)] });
   }, [onSetConfig]);
 
   const removeLastBlob = useCallback(() => {
     onSetConfig(prev => prev.blobs.length > 2 ? { ...prev, blobs: prev.blobs.slice(0, -1) } : prev);
   }, [onSetConfig]);
+
+  // Delete a specific blob by id. Keeps at least the background + one blob.
+  const removeBlob = useCallback((id: string) => {
+    onSetConfig(prev => prev.blobs.length > 2 ? { ...prev, blobs: prev.blobs.filter(b => b.id !== id) } : prev);
+  }, [onSetConfig]);
+
+  // Background (index 0) can't be removed; one color blob must always remain.
+  const canDeleteBlob = config.blobs.length > 2;
 
   const toggleGrain = useCallback(() => {
     if (grainEnabled) {
@@ -105,6 +118,7 @@ export default function ControlPanel({
     onCollapse: () => setCollapsed(true),
     onAbout: () => setAboutOpen(true),
     updateBlob, addBlob, removeLastBlob, toggleGrain, randomizeColor,
+    removeBlob, canDeleteBlob,
   };
 
   // ── Collapsed pill ─────────────────────────────────────────────────────────
@@ -116,7 +130,7 @@ export default function ControlPanel({
           <SpringMount>
             <div className="flex items-center gap-2 bg-zinc-950/90 backdrop-blur-xl rounded-full border border-white/[0.06] pl-2.5 pr-2 py-2 shadow-xl">
               <div className="flex items-center gap-1.5 px-1">
-                {config.blobs.slice(1, 4).map(b => (
+                {config.blobs.slice(1).map(b => (
                   <div key={b.id} className="h-[18px] w-[18px] rounded-full border border-white/15 flex-shrink-0" style={{ background: b.color }} />
                 ))}
               </div>
@@ -148,21 +162,24 @@ export default function ControlPanel({
     <>
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       <div ref={panelRef} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col w-max max-w-[calc(100vw-32px)]">
-        {/* Blob editor panel — snaps instantly */}
-        <div className="grid w-full mb-2" style={{ gridTemplateRows: editorOpen ? '1fr' : '0fr' }}>
+        {/* Blob editor panel — snaps instantly. 6px gap to the bar when open. */}
+        <div className="grid w-full" style={{ gridTemplateRows: editorOpen ? '1fr' : '0fr', marginBottom: editorOpen ? 6 : 0 }}>
           <div className="overflow-hidden min-h-0">
-            <div className="pb-1">
-              <div className="bg-zinc-950/90 backdrop-blur-xl rounded-xl border border-white/[0.06] overflow-x-auto scrollbar-hide">
-                <div className="flex gap-[26px] sm:gap-7 px-4 pt-3.5 pb-3.5 w-max min-w-full">
-                  {config.blobs.map((blob, index) => (
-                    <BlobColumn key={blob.id} blob={blob} index={index} isBackground={index === 0} isOpen={editorOpen}
-                      onChange={p => updateBlob(blob.id, p)} onRandomize={() => randomizeColor(blob.id)} />
-                  ))}
-                </div>
+            <div className="bg-zinc-950/90 backdrop-blur-xl rounded-xl border border-white/[0.06] overflow-x-auto scrollbar-hide">
+              <div className="flex gap-[26px] sm:gap-7 px-4 pt-3.5 pb-3.5 w-max min-w-full">
+                {config.blobs.map((blob, index) => (
+                  <BlobColumn key={blob.id} blob={blob} index={index} isBackground={index === 0} isOpen={editorOpen}
+                    onChange={p => updateBlob(blob.id, p)} onRandomize={() => randomizeColor(blob.id)}
+                    onDelete={() => removeBlob(blob.id)} canDelete={canDeleteBlob} />
+                ))}
               </div>
             </div>
           </div>
         </div>
+
+        {/* Canvas gesture hint — sits above the bar; hidden when the editor
+            is open (it would otherwise crowd the 6px gap) and when collapsed. */}
+        {!editorOpen && <GestureHint className="mb-2" />}
 
         {/* Main bar */}
         <SpringMount>
@@ -172,13 +189,11 @@ export default function ControlPanel({
             </CtrlGroup>
             <Sep />
             <CtrlGroup label="Blobs">
-              <CountBtn onClick={removeLastBlob} disabled={config.blobs.length <= 2}>−</CountBtn>
-              <span className="text-[13px] text-zinc-300 w-4 text-center tabular-nums select-none">{config.blobs.length - 1}</span>
-              <CountBtn onClick={addBlob} disabled={config.blobs.length >= 8}>+</CountBtn>
-              <div className="w-px self-stretch bg-white/[0.06] mx-0.5" />
+              <CircleBtn onClick={removeLastBlob} disabled={config.blobs.length <= 2} title="Remove blob"><MinusIcon /></CircleBtn>
               {config.blobs.slice(1).map(b => (
                 <SwatchCircle key={b.id} color={b.color} active={editorOpen} onClick={() => setEditorOpen(o => !o)} />
               ))}
+              <CircleBtn onClick={addBlob} disabled={config.blobs.length >= MAX_BLOBS} title="Add blob"><PlusIcon /></CircleBtn>
             </CtrlGroup>
             <Sep />
             <CtrlGroup label="Grain">
@@ -194,7 +209,8 @@ export default function ControlPanel({
             <CtrlGroup label="Layout">
               <Tab onClick={onRandomize}>Randomize</Tab>
               <Tab onClick={onShuffleColors}>Colors</Tab>
-              <Tab onClick={onReset}>Reset</Tab>
+              <div className="w-px self-stretch bg-white/[0.06] mx-0.5" />
+              <Tab onClick={onReset}><ResetIcon />Reset</Tab>
             </CtrlGroup>
             <Sep />
             <CtrlGroup label="Export">
@@ -232,12 +248,15 @@ interface BottomSheetProps {
   addBlob: () => void; removeLastBlob: () => void;
   toggleGrain: () => void;
   randomizeColor: (id: string) => void;
+  removeBlob: (id: string) => void;
+  canDeleteBlob: boolean;
 }
 
 function BottomSheet({
   config, format, onFormat, scale, onScale, grainEnabled, savedNoiseOpacity,
   onSetConfig, onRandomize, onShuffleColors, onReset, onDownload,
   onCollapse, onAbout, updateBlob, addBlob, removeLastBlob, toggleGrain, randomizeColor,
+  removeBlob, canDeleteBlob,
 }: BottomSheetProps) {
   const [view, setView] = useState<'main' | 'editor'>('main');
   const [ready, setReady] = useState(false);
@@ -257,10 +276,42 @@ function BottomSheet({
     if (exiting) onCollapse();
   }, [exiting, onCollapse]);
 
+  // Pull-down-to-collapse: drag the handle down; past the threshold the sheet
+  // dismisses, otherwise it springs back. Pointer capture keeps the drag alive
+  // even if the finger leaves the small handle target.
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef({ active: false, startY: 0, pointerId: -1 });
+  const DRAG_DISMISS_PX = 90;
+
+  const onHandleDown = (e: React.PointerEvent) => {
+    dragRef.current = { active: true, startY: e.clientY, pointerId: e.pointerId };
+    setDragging(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+  const onHandleMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d.active || e.pointerId !== d.pointerId) return;
+    setDragY(Math.max(0, e.clientY - d.startY)); // downward only
+  };
+  const onHandleUp = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d.active || e.pointerId !== d.pointerId) return;
+    d.active = false;
+    setDragging(false);
+    const dist = Math.max(0, e.clientY - d.startY);
+    try { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+    if (dist > DRAG_DISMISS_PX) dismiss();
+    else setDragY(0); // spring back
+  };
+
   const ty = !ready || exiting ? '100%' : '0';
-  const sheetTransition = exiting
-    ? 'transform 240ms cubic-bezier(0.4, 0, 1, 1)'
-    : ready ? 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+  const transform = dragging ? `translateY(${dragY}px)` : `translateY(${ty})`;
+  const sheetTransition = dragging
+    ? 'none'
+    : exiting
+      ? 'transform 240ms cubic-bezier(0.4, 0, 1, 1)'
+      : ready ? 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
 
   return (
     <>
@@ -269,15 +320,26 @@ function BottomSheet({
 
       <div
         className="fixed inset-x-0 bottom-0 z-50"
-        style={{ transform: `translateY(${ty})`, transition: sheetTransition }}
+        style={{ transform, transition: sheetTransition }}
         onTransitionEnd={handleTransitionEnd}
       >
         <div className="bg-zinc-950 border-t border-white/[0.08] rounded-t-2xl overflow-hidden"
           style={{ maxHeight: '90svh' }}>
-          {/* Drag handle */}
-          <div className="flex justify-center pt-2 pb-1">
+          {/* Drag handle — drag down to collapse */}
+          <div
+            className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+            style={{ touchAction: 'none' }}
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={onHandleUp}
+            onPointerCancel={onHandleUp}
+          >
             <div className="w-8 h-[3px] rounded-full bg-white/[0.14]" />
           </div>
+
+          {/* Canvas gesture hint */}
+          <GestureHint className="pb-1.5" />
+
 
           {/* Two-view horizontal slider */}
           <div className="overflow-hidden">
@@ -302,20 +364,18 @@ function BottomSheet({
                   )}
 
                   <SheetRow label="Blobs">
-                    <CountBtn onClick={removeLastBlob} disabled={config.blobs.length <= 2}>−</CountBtn>
-                    <span className="text-[13px] text-zinc-300 w-5 text-center tabular-nums select-none">{config.blobs.length - 1}</span>
-                    <CountBtn onClick={addBlob} disabled={config.blobs.length >= 8}>+</CountBtn>
-                    <div className="w-px h-5 bg-white/[0.08] mx-0.5" />
+                    <CircleBtn onClick={removeLastBlob} disabled={config.blobs.length <= 2} title="Remove blob" className="h-8 w-8"><MinusIcon /></CircleBtn>
                     {config.blobs.slice(1).map(b => (
                       <ColorPickerLabel key={b.id} blob={b} onChange={p => updateBlob(b.id, p)} />
                     ))}
+                    <CircleBtn onClick={addBlob} disabled={config.blobs.length >= MAX_BLOBS} title="Add blob" className="h-8 w-8"><PlusIcon /></CircleBtn>
                     <div className="w-px h-5 bg-white/[0.08] mx-0.5" />
                     <button
                       type="button"
                       onClick={() => setView('editor')}
-                      className="h-8 px-3 rounded-lg text-[12px] font-normal border-none cursor-pointer transition-[background-color,color] duration-150 bg-white/[0.07] text-zinc-400 hover:bg-white/[0.12] hover:text-zinc-200"
+                      className="flex items-center justify-center h-8 px-3 rounded-lg text-[12px] font-normal border-none cursor-pointer transition-[background-color,color] duration-150 bg-white/[0.07] text-zinc-400 hover:bg-white/[0.12] hover:text-zinc-200"
                     >
-                      Edit
+                      <EditIcon />Edit
                     </button>
                   </SheetRow>
 
@@ -336,16 +396,22 @@ function BottomSheet({
                   <SheetRow label="Layout">
                     <Tab onClick={onRandomize}>Randomize</Tab>
                     <Tab onClick={onShuffleColors}>Colors</Tab>
-                    <Tab onClick={onReset}>Reset</Tab>
+                    <div className="w-px h-5 bg-white/[0.08] mx-0.5" />
+                    <Tab onClick={onReset}><ResetIcon />Reset</Tab>
                   </SheetRow>
 
                   <SheetDivider />
 
-                  <SheetRow label="Export">
+                  {/* Export split across three rows so nothing wraps awkwardly. */}
+                  <SheetRow label="Format">
                     {FORMATS.map(f => <Tab key={f.value} active={format === f.value} onClick={() => onFormat(f.value)}>{f.label}</Tab>)}
-                    <div className="w-px h-5 bg-white/[0.08] mx-0.5" />
+                  </SheetRow>
+
+                  <SheetRow label="Scale">
                     {SCALES.map(s => <Tab key={s.value} active={scale === s.value} onClick={() => onScale(s.value)}>{s.label}</Tab>)}
-                    <div className="w-px h-5 bg-white/[0.08] mx-0.5" />
+                  </SheetRow>
+
+                  <SheetRow label="">
                     <Tab active onClick={() => onDownload(format, scale)}><DownloadIcon />Save</Tab>
                   </SheetRow>
 
@@ -384,7 +450,8 @@ function BottomSheet({
                   <div className="flex gap-7 w-max">
                     {config.blobs.map((blob, i) => (
                       <BlobColumn key={blob.id} blob={blob} index={i} isBackground={i === 0}
-                        isOpen={view === 'editor'} onChange={p => updateBlob(blob.id, p)} onRandomize={() => randomizeColor(blob.id)} />
+                        isOpen={view === 'editor'} onChange={p => updateBlob(blob.id, p)} onRandomize={() => randomizeColor(blob.id)}
+                        onDelete={() => removeBlob(blob.id)} canDelete={canDeleteBlob} />
                     ))}
                   </div>
                 </div>
@@ -432,9 +499,11 @@ interface BlobColumnProps {
   isOpen: boolean;
   onChange: (patch: Partial<GradientBlob>) => void;
   onRandomize: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
 }
 
-function BlobColumn({ blob, index, isBackground, isOpen, onChange, onRandomize }: BlobColumnProps) {
+function BlobColumn({ blob, index, isBackground, isOpen, onChange, onRandomize, onDelete, canDelete }: BlobColumnProps) {
   const delay = index * 35;
   return (
     <div
@@ -459,6 +528,12 @@ function BlobColumn({ blob, index, isBackground, isOpen, onChange, onRandomize }
           <button type="button" onClick={onRandomize} title="Random color"
             className="h-8 w-8 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-400 hover:text-zinc-200 transition-[background-color,color] duration-150 flex items-center justify-center border-none cursor-pointer flex-shrink-0 outline-none">
             <DiceIcon />
+          </button>
+        )}
+        {!isBackground && (
+          <button type="button" onClick={onDelete} disabled={!canDelete} title="Delete blob"
+            className="h-8 w-8 rounded-lg bg-white/[0.07] hover:bg-red-500/15 text-zinc-400 hover:text-red-400 disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-white/[0.07] disabled:hover:text-zinc-400 transition-[background-color,color] duration-150 flex items-center justify-center border-none cursor-pointer flex-shrink-0 outline-none">
+            <TrashIcon />
           </button>
         )}
       </div>
@@ -526,6 +601,27 @@ function AboutModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
 /* ─── Primitives ─────────────────────────────────────────────────────────── */
 
+function GestureHint({ className = '' }: { className?: string }) {
+  // Floats over the live gradient, so a dark text-shadow keeps it legible on
+  // bright backgrounds without an opaque pill stealing focus from the canvas.
+  return (
+    <div
+      className={`flex items-center justify-center gap-2 select-none text-zinc-300/90 ${className}`}
+      style={{ textShadow: '0 1px 3px rgba(0,0,0,0.55)' }}
+    >
+      <span className="flex items-center gap-1.5 text-[11px] leading-none">
+        <HandIcon />
+        Drag a blob to move
+      </span>
+      <span className="opacity-50">·</span>
+      <span className="flex items-center gap-1.5 text-[11px] leading-none">
+        <ScrollIcon />
+        Scroll to resize
+      </span>
+    </div>
+  );
+}
+
 function CtrlGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-[9px] min-w-0 flex-shrink-0">
@@ -550,10 +646,12 @@ function Tab({ active, onClick, children }: { active?: boolean; onClick?: () => 
   );
 }
 
-function CountBtn({ onClick, disabled, children }: { onClick: () => void; disabled: boolean; children: React.ReactNode }) {
+function CircleBtn({ onClick, disabled, title, children, className = 'h-9 w-9' }: {
+  onClick: () => void; disabled?: boolean; title?: string; children: React.ReactNode; className?: string;
+}) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled}
-      className="flex items-center justify-center h-8 w-8 rounded-lg text-base bg-white/[0.07] text-zinc-400 hover:bg-white/[0.12] hover:text-zinc-200 disabled:opacity-25 disabled:cursor-not-allowed transition-[background-color,color] duration-150 border-none cursor-pointer outline-none">
+    <button type="button" onClick={onClick} disabled={disabled} title={title}
+      className={`${className} rounded-full flex items-center justify-center flex-shrink-0 bg-white/[0.07] text-zinc-400 hover:bg-white/[0.13] hover:text-zinc-200 disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-white/[0.07] disabled:hover:text-zinc-400 transition-[background-color,color] duration-150 border-none cursor-pointer outline-none`}>
       {children}
     </button>
   );
@@ -679,6 +777,65 @@ function CloseIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
       <path d="M2 2l8 8M10 2l-8 8" />
+    </svg>
+  );
+}
+
+function ResetIcon() {
+  return (
+    <svg className="mr-1.5 h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11.5 7a4.5 4.5 0 1 1-1.32-3.18" />
+      <path d="M11 1.5v2.5H8.5" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg className="mr-1.5 h-3.5 w-3.5" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2.5l2 2L5 11l-2.5.5L3 9z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+      <path d="M8 3.5v9M3.5 8h9" />
+    </svg>
+  );
+}
+
+function MinusIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+      <path d="M3.5 8h9" />
+    </svg>
+  );
+}
+
+function HandIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.5 7V3.4a1 1 0 0 1 2 0V6m0 0V2.6a1 1 0 0 1 2 0V6m0 0V3.4a1 1 0 0 1 2 0V8.5c0 2.2-1.5 4-3.8 4-1.5 0-2.4-.6-3.2-1.7L2 8.4a1 1 0 0 1 1.6-1.2L4.5 8" />
+    </svg>
+  );
+}
+
+function ScrollIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="1.5" width="6" height="11" rx="3" />
+      <path d="M7 4v2" />
+      <path d="M7 9.5l-1.2 1.2M7 9.5l1.2 1.2" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 3.5h9M5.5 3.5V2.5a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1M3.5 3.5l.5 8a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8M6 6v4M8 6v4" />
     </svg>
   );
 }
